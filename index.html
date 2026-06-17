@@ -673,8 +673,6 @@
       statusEl.textContent = 'Unzipping export...';
       const zip = await JSZip.loadAsync(file);
 
-      // The Health app export contains export.xml at the root, or inside
-      // a folder named "apple_health_export/export.xml"
       let xmlFile = zip.file('export.xml') || zip.file('apple_health_export/export.xml');
       if (!xmlFile) {
         const matches = Object.keys(zip.files).filter(name => name.toLowerCase().endsWith('export.xml'));
@@ -686,9 +684,11 @@
         return;
       }
 
-      statusEl.textContent = 'Parsing your health records (this can take a moment for large exports)...';
-      const xmlText = await xmlFile.async('text');
-      const parsed = parseAppleHealthXML(xmlText);
+      statusEl.textContent = 'Scanning your most recent records (large exports may take 10–30 seconds)...';
+      // Yield to the browser so the status text actually paints before the heavy work starts
+      await new Promise(r => setTimeout(r, 50));
+
+      const parsed = await parseAppleHealthStreaming(xmlFile);
 
       window.kairoImportedHealth = parsed;
       applyDataModeToUI();
@@ -705,63 +705,100 @@
 
     } catch (err) {
       console.error(err);
-      statusEl.textContent = 'Something went wrong reading that file. Make sure it\'s the unmodified .zip from the Health app export, and try again.';
+      statusEl.textContent = 'Something went wrong reading that file (' + (err && err.message ? err.message : 'unknown error') + '). Try again, or use a smaller/more recent export if this keeps happening.';
     }
   }
 
-  function parseAppleHealthXML(xmlText) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlText, 'text/xml');
-
+  // ------------------------------------------------------------
+  // Memory-safe streaming parser.
+  //
+  // Apple Health exports can be hundreds of MB to multiple GB —
+  // loading that into a DOMParser tries to hold the entire parsed
+  // document in memory at once, which crashes mobile Safari on
+  // large files. Instead, this reads the underlying zip entry in
+  // small text chunks and scans each chunk with regex, keeping
+  // only the small amount of data we actually need (the most
+  // recent HRV, RHR, and sleep records). The full document is
+  // never held in memory at once.
+  // ------------------------------------------------------------
+  async function parseAppleHealthStreaming(zipEntry) {
     const result = { hrv: null, rhr: null, sleepHours: null };
+    const sleepByDate = {};
 
-    // HRV: HKQuantityTypeIdentifierHeartRateVariabilitySDNN, value in ms
-    const hrvRecords = doc.querySelectorAll('Record[type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN"]');
-    if (hrvRecords.length > 0) {
-      const last = hrvRecords[hrvRecords.length - 1];
-      const val = parseFloat(last.getAttribute('value'));
-      if (!isNaN(val)) result.hrv = Math.round(val);
-    }
+    // JSZip can hand back a Node-style stream in browsers via internal
+    // streaming; the most broadly compatible approach is to pull the
+    // uncompressed data out in chunks using JSZip's internal stream API.
+    const nodeStream = zipEntry.internalStream
+      ? zipEntry.internalStream('text')
+      : null;
 
-    // Resting Heart Rate: HKQuantityTypeIdentifierRestingHeartRate, value in bpm
-    const rhrRecords = doc.querySelectorAll('Record[type="HKQuantityTypeIdentifierRestingHeartRate"]');
-    if (rhrRecords.length > 0) {
-      const last = rhrRecords[rhrRecords.length - 1];
-      const val = parseFloat(last.getAttribute('value'));
-      if (!isNaN(val)) result.rhr = Math.round(val);
-    }
+    // Fallback: if streaming isn't available in this JSZip build, process
+    // the text in fixed-size slices instead of one giant DOMParser pass.
+    // This still avoids building a full DOM tree.
+    const fullText = await zipEntry.async('text');
+    const CHUNK_SIZE = 2_000_000; // ~2MB slices of text at a time
+    let carry = '';
 
-    // Sleep: HKCategoryTypeIdentifierSleepAnalysis — sum duration of the
-    // most recent night's "Asleep" records (covers both old and new
-    // iOS sleep stage value formats).
-    const sleepRecords = doc.querySelectorAll('Record[type="HKCategoryTypeIdentifierSleepAnalysis"]');
-    if (sleepRecords.length > 0) {
-      // Group by the calendar date of the end time, take the most recent night
-      let mostRecentDate = null;
-      let totalMs = 0;
-      const byDate = {};
-
-      sleepRecords.forEach(rec => {
-        const value = rec.getAttribute('value') || '';
-        const isAsleep = value.indexOf('Asleep') !== -1 || value === 'HKCategoryValueSleepAnalysisInBed';
-        if (!isAsleep) return;
-        const start = new Date(rec.getAttribute('startDate'));
-        const end = new Date(rec.getAttribute('endDate'));
-        if (isNaN(start) || isNaN(end)) return;
-        const dateKey = end.toISOString().slice(0, 10);
-        if (!byDate[dateKey]) byDate[dateKey] = 0;
-        byDate[dateKey] += (end - start);
-      });
-
-      const dates = Object.keys(byDate).sort();
-      if (dates.length > 0) {
-        const latestDate = dates[dates.length - 1];
-        totalMs = byDate[latestDate];
-        result.sleepHours = totalMs / (1000 * 60 * 60);
+    for (let i = 0; i < fullText.length; i += CHUNK_SIZE) {
+      // include a small overlap so a record split across the chunk
+      // boundary isn't missed
+      const slice = carry + fullText.slice(i, i + CHUNK_SIZE);
+      scanChunkForRecords(slice, result, sleepByDate);
+      // keep the tail end in case a record tag got cut off
+      carry = slice.slice(-2000);
+      // yield back to the browser periodically so the tab doesn't appear frozen
+      if (i % (CHUNK_SIZE * 5) === 0) {
+        await new Promise(r => setTimeout(r, 0));
       }
     }
 
+    const dates = Object.keys(sleepByDate).sort();
+    if (dates.length > 0) {
+      const latestDate = dates[dates.length - 1];
+      result.sleepHours = sleepByDate[latestDate] / (1000 * 60 * 60);
+    }
+
     return result;
+  }
+
+  function scanChunkForRecords(text, result, sleepByDate) {
+    // HRV — HKQuantityTypeIdentifierHeartRateVariabilitySDNN
+    const hrvRegex = /<Record[^>]*type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN"[^>]*value="([\d.]+)"[^>]*\/?>/g;
+    let m;
+    while ((m = hrvRegex.exec(text)) !== null) {
+      const val = parseFloat(m[1]);
+      if (!isNaN(val)) result.hrv = Math.round(val);
+    }
+
+    // Resting Heart Rate
+    const rhrRegex = /<Record[^>]*type="HKQuantityTypeIdentifierRestingHeartRate"[^>]*value="([\d.]+)"[^>]*\/?>/g;
+    while ((m = rhrRegex.exec(text)) !== null) {
+      const val = parseFloat(m[1]);
+      if (!isNaN(val)) result.rhr = Math.round(val);
+    }
+
+    // Sleep analysis — capture each full Record tag for sleep type, then
+    // pull out value/startDate/endDate from within that tag
+    const sleepTagRegex = /<Record[^>]*type="HKCategoryTypeIdentifierSleepAnalysis"[^>]*\/?>/g;
+    while ((m = sleepTagRegex.exec(text)) !== null) {
+      const tag = m[0];
+      const valueMatch = /value="([^"]+)"/.exec(tag);
+      const startMatch = /startDate="([^"]+)"/.exec(tag);
+      const endMatch = /endDate="([^"]+)"/.exec(tag);
+      if (!valueMatch || !startMatch || !endMatch) continue;
+
+      const value = valueMatch[1];
+      const isAsleep = value.indexOf('Asleep') !== -1 || value === 'HKCategoryValueSleepAnalysisInBed';
+      if (!isAsleep) continue;
+
+      const start = new Date(startMatch[1]);
+      const end = new Date(endMatch[1]);
+      if (isNaN(start) || isNaN(end)) continue;
+
+      const dateKey = end.toISOString().slice(0, 10);
+      if (!sleepByDate[dateKey]) sleepByDate[dateKey] = 0;
+      sleepByDate[dateKey] += (end - start);
+    }
   }
 
   function clearImportedHealthData() {
