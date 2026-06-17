@@ -128,6 +128,7 @@
   .toggle-knob { width: 22px; height: 22px; border-radius: 50%; background: white; position: absolute; top: 3px; left: 3px; transition: left 0.2s ease; }
   .toggle-switch.on .toggle-knob { left: 25px; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
@@ -379,6 +380,18 @@
       </div>
 
       <div class="card">
+        <div class="card-label" style="color:var(--good);">IMPORT APPLE HEALTH DATA</div>
+        <div style="font-size:12.5px; color: var(--dim); line-height:1.6; margin-bottom:14px;">
+          Upload your Health app export (.zip) to see your real HRV, resting heart rate, and sleep instead of demo data. Everything is processed right here in your browser — your file is never uploaded anywhere.
+        </div>
+        <input type="file" id="healthFileInput" accept=".zip" style="display:none;" onchange="handleHealthFileSelect(event)" />
+        <button class="cta-btn" style="background: linear-gradient(135deg, var(--good), #00B888); color:#04140F;" onclick="document.getElementById('healthFileInput').click()">📤 Upload Health Export (.zip)</button>
+        <div id="healthImportStatus" style="font-size:12px; color: var(--dim); margin-top:10px; text-align:center; min-height:16px;"></div>
+        <div id="healthImportResult" class="hidden" style="margin-top:14px; padding:12px 14px; background: var(--good-dim); border:1px solid rgba(0,229,160,0.3); border-radius:12px; font-size:12.5px; color:var(--text); line-height:1.6;"></div>
+        <button id="clearHealthDataBtn" class="hidden" style="margin-top:10px; background:none; border:none; color:var(--muted); font-size:12px; cursor:pointer; text-decoration:underline;" onclick="clearImportedHealthData()">Clear imported data, use demo data again</button>
+      </div>
+
+      <div class="card">
         <div class="card-label" style="color:var(--accent);">BETA TESTER INFO</div>
         <div style="font-size:12.5px; color: var(--dim); line-height:1.6;">
           You're using a private testing build of Kairo. This is not the public app — pricing and final features aren't set yet. Your feedback directly shapes what we build next.
@@ -558,6 +571,42 @@
     const ringCircle = document.getElementById('recoveryRingCircle');
     const nudgeText = document.getElementById('nudgeText');
 
+    // Imported real Apple Health data takes priority over both demo modes
+    if (window.kairoImportedHealth) {
+      const h = window.kairoImportedHealth;
+      hrvRhrRow.classList.remove('hidden');
+      document.querySelector('#hrvRhrRow .metric-pill:nth-child(1) .metric-value').innerHTML =
+        (h.hrv != null ? h.hrv : '—') + ' <span style="font-size:10px;color:var(--muted);">ms</span>';
+      document.querySelector('#hrvRhrRow .metric-pill:nth-child(2) .metric-value').innerHTML =
+        (h.rhr != null ? h.rhr : '—') + ' <span style="font-size:10px;color:var(--muted);">bpm</span>';
+
+      const sleepHrs = h.sleepHours != null ? h.sleepHours : 0;
+      const debt = Math.max(0, (8 - sleepHrs)).toFixed(1);
+      debtLabel.textContent = 'SLEEP DEBT (FROM YOUR DATA)';
+      debtValue.textContent = debt;
+      debtUnit.textContent = 'hours';
+      debtNote.textContent = sleepHrs > 0
+        ? `Based on ${sleepHrs.toFixed(1)}h logged sleep from your most recent night in your export.`
+        : 'No recent sleep records found in your export — debt shown as 0.';
+      debtBar.style.width = Math.min(100, (debt / 5) * 100) + '%';
+
+      sleepLabel.textContent = '🌙 Sleep (real)';
+      sleepValue.innerHTML = sleepHrs.toFixed(1) + ' <span style="font-size:10px;color:var(--muted);">hrs</span>';
+      stressValue.innerHTML = '— <span style="font-size:10px;color:var(--muted);">n/a</span>';
+
+      // Simple real-data recovery estimate from HRV + RHR + sleep, just for demo purposes
+      let score = 60;
+      if (h.hrv != null) score += (h.hrv - 50) * 0.6;
+      if (h.rhr != null) score -= (h.rhr - 55) * 0.5;
+      if (sleepHrs) score += (sleepHrs - 7) * 5;
+      score = Math.max(10, Math.min(95, Math.round(score)));
+
+      ringText.textContent = score;
+      setRing(ringCircle, score);
+      nudgeText.textContent = `This is calculated from your real Apple Health export — HRV ${h.hrv != null ? h.hrv + 'ms' : 'n/a'}, RHR ${h.rhr != null ? h.rhr + 'bpm' : 'n/a'}, sleep ${sleepHrs.toFixed(1)}h.`;
+      return;
+    }
+
     if (window.kairoHasWearable) {
       hrvRhrRow.classList.remove('hidden');
       debtLabel.textContent = 'SLEEP DEBT';
@@ -597,6 +646,132 @@
     const circ = 2 * Math.PI * r;
     const dash = (value / 100) * circ;
     circleEl.setAttribute('stroke-dasharray', `${dash} ${circ}`);
+  }
+
+  // ============================================================
+  // APPLE HEALTH EXPORT IMPORT
+  // Accepts the .zip from iPhone Health app -> Profile -> Export
+  // All Health Data. Extracts export.xml, parses HRV, resting
+  // heart rate, and sleep records. Runs entirely in the browser —
+  // nothing is uploaded anywhere.
+  // ============================================================
+  async function handleHealthFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const statusEl = document.getElementById('healthImportStatus');
+    const resultEl = document.getElementById('healthImportResult');
+    resultEl.classList.add('hidden');
+    statusEl.textContent = 'Reading file...';
+
+    try {
+      if (typeof JSZip === 'undefined') {
+        statusEl.textContent = 'Could not load the unzip library. Check your internet connection and try again.';
+        return;
+      }
+
+      statusEl.textContent = 'Unzipping export...';
+      const zip = await JSZip.loadAsync(file);
+
+      // The Health app export contains export.xml at the root, or inside
+      // a folder named "apple_health_export/export.xml"
+      let xmlFile = zip.file('export.xml') || zip.file('apple_health_export/export.xml');
+      if (!xmlFile) {
+        const matches = Object.keys(zip.files).filter(name => name.toLowerCase().endsWith('export.xml'));
+        if (matches.length > 0) xmlFile = zip.file(matches[0]);
+      }
+
+      if (!xmlFile) {
+        statusEl.textContent = 'Could not find export.xml inside that zip. Make sure this is the file from Health app → Export All Health Data.';
+        return;
+      }
+
+      statusEl.textContent = 'Parsing your health records (this can take a moment for large exports)...';
+      const xmlText = await xmlFile.async('text');
+      const parsed = parseAppleHealthXML(xmlText);
+
+      window.kairoImportedHealth = parsed;
+      applyDataModeToUI();
+
+      statusEl.textContent = '';
+      resultEl.classList.remove('hidden');
+      resultEl.innerHTML =
+        '✅ Imported successfully.<br>' +
+        'HRV: ' + (parsed.hrv != null ? parsed.hrv + ' ms' : 'no recent record found') + '<br>' +
+        'Resting Heart Rate: ' + (parsed.rhr != null ? parsed.rhr + ' bpm' : 'no recent record found') + '<br>' +
+        'Last Night Sleep: ' + (parsed.sleepHours != null ? parsed.sleepHours.toFixed(1) + ' hrs' : 'no recent record found') +
+        '<br><br>Your Today tab now reflects this real data.';
+      document.getElementById('clearHealthDataBtn').classList.remove('hidden');
+
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = 'Something went wrong reading that file. Make sure it\'s the unmodified .zip from the Health app export, and try again.';
+    }
+  }
+
+  function parseAppleHealthXML(xmlText) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlText, 'text/xml');
+
+    const result = { hrv: null, rhr: null, sleepHours: null };
+
+    // HRV: HKQuantityTypeIdentifierHeartRateVariabilitySDNN, value in ms
+    const hrvRecords = doc.querySelectorAll('Record[type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN"]');
+    if (hrvRecords.length > 0) {
+      const last = hrvRecords[hrvRecords.length - 1];
+      const val = parseFloat(last.getAttribute('value'));
+      if (!isNaN(val)) result.hrv = Math.round(val);
+    }
+
+    // Resting Heart Rate: HKQuantityTypeIdentifierRestingHeartRate, value in bpm
+    const rhrRecords = doc.querySelectorAll('Record[type="HKQuantityTypeIdentifierRestingHeartRate"]');
+    if (rhrRecords.length > 0) {
+      const last = rhrRecords[rhrRecords.length - 1];
+      const val = parseFloat(last.getAttribute('value'));
+      if (!isNaN(val)) result.rhr = Math.round(val);
+    }
+
+    // Sleep: HKCategoryTypeIdentifierSleepAnalysis — sum duration of the
+    // most recent night's "Asleep" records (covers both old and new
+    // iOS sleep stage value formats).
+    const sleepRecords = doc.querySelectorAll('Record[type="HKCategoryTypeIdentifierSleepAnalysis"]');
+    if (sleepRecords.length > 0) {
+      // Group by the calendar date of the end time, take the most recent night
+      let mostRecentDate = null;
+      let totalMs = 0;
+      const byDate = {};
+
+      sleepRecords.forEach(rec => {
+        const value = rec.getAttribute('value') || '';
+        const isAsleep = value.indexOf('Asleep') !== -1 || value === 'HKCategoryValueSleepAnalysisInBed';
+        if (!isAsleep) return;
+        const start = new Date(rec.getAttribute('startDate'));
+        const end = new Date(rec.getAttribute('endDate'));
+        if (isNaN(start) || isNaN(end)) return;
+        const dateKey = end.toISOString().slice(0, 10);
+        if (!byDate[dateKey]) byDate[dateKey] = 0;
+        byDate[dateKey] += (end - start);
+      });
+
+      const dates = Object.keys(byDate).sort();
+      if (dates.length > 0) {
+        const latestDate = dates[dates.length - 1];
+        totalMs = byDate[latestDate];
+        result.sleepHours = totalMs / (1000 * 60 * 60);
+      }
+    }
+
+    return result;
+  }
+
+  function clearImportedHealthData() {
+    window.kairoImportedHealth = null;
+    document.getElementById('healthImportResult').classList.add('hidden');
+    document.getElementById('clearHealthDataBtn').classList.add('hidden');
+    document.getElementById('healthImportStatus').textContent = 'Cleared. Showing demo data again.';
+    document.getElementById('healthFileInput').value = '';
+    applyDataModeToUI();
+    setTimeout(() => { document.getElementById('healthImportStatus').textContent = ''; }, 2500);
   }
 
   function switchTab(name, btn) {
