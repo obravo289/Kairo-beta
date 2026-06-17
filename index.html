@@ -128,7 +128,6 @@
   .toggle-knob { width: 22px; height: 22px; border-radius: 50%; background: white; position: absolute; top: 3px; left: 3px; transition: left 0.2s ease; }
   .toggle-switch.on .toggle-knob { left: 25px; }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
@@ -665,30 +664,22 @@
     statusEl.textContent = 'Reading file...';
 
     try {
-      if (typeof JSZip === 'undefined') {
-        statusEl.textContent = 'Could not load the unzip library. Check your internet connection and try again.';
+      if (typeof DecompressionStream === 'undefined') {
+        statusEl.textContent = 'Your browser is missing a feature this needs (DecompressionStream). Try updating Safari/iOS, or use a different browser.';
         return;
       }
 
-      statusEl.textContent = 'Unzipping export...';
-      const zip = await JSZip.loadAsync(file);
+      statusEl.textContent = 'Locating your health records inside the zip...';
+      const entry = await findZipEntry(file, 'export.xml');
 
-      let xmlFile = zip.file('export.xml') || zip.file('apple_health_export/export.xml');
-      if (!xmlFile) {
-        const matches = Object.keys(zip.files).filter(name => name.toLowerCase().endsWith('export.xml'));
-        if (matches.length > 0) xmlFile = zip.file(matches[0]);
-      }
-
-      if (!xmlFile) {
-        statusEl.textContent = 'Could not find export.xml inside that zip. Make sure this is the file from Health app → Export All Health Data.';
+      if (!entry) {
+        statusEl.textContent = 'Could not find export.xml inside that zip. Make sure this is the unmodified file from Health app → Export All Health Data.';
         return;
       }
 
-      statusEl.textContent = 'Scanning your most recent records (large exports may take 10–30 seconds)...';
-      // Yield to the browser so the status text actually paints before the heavy work starts
-      await new Promise(r => setTimeout(r, 50));
+      statusEl.textContent = 'Streaming through your records in small pieces — memory stays low no matter how large your history is...';
 
-      const parsed = await parseAppleHealthStreaming(xmlFile);
+      const parsed = await streamDecompressAndScan(file, entry);
 
       window.kairoImportedHealth = parsed;
       applyDataModeToUI();
@@ -705,51 +696,102 @@
 
     } catch (err) {
       console.error(err);
-      statusEl.textContent = 'Something went wrong reading that file (' + (err && err.message ? err.message : 'unknown error') + '). Try again, or use a smaller/more recent export if this keeps happening.';
+      statusEl.textContent = 'Something went wrong reading that file (' + (err && err.message ? err.message : 'unknown error') + '). Try again, or let us know what export size you\'re using.';
     }
   }
 
   // ------------------------------------------------------------
-  // Memory-safe streaming parser.
-  //
-  // Apple Health exports can be hundreds of MB to multiple GB —
-  // loading that into a DOMParser tries to hold the entire parsed
-  // document in memory at once, which crashes mobile Safari on
-  // large files. Instead, this reads the underlying zip entry in
-  // small text chunks and scans each chunk with regex, keeping
-  // only the small amount of data we actually need (the most
-  // recent HRV, RHR, and sleep records). The full document is
-  // never held in memory at once.
+  // Locates a named entry inside a .zip without ever loading the
+  // whole archive into memory. ZIP files store a "central directory"
+  // near the end listing every entry's name, compressed size, and
+  // byte offset — we read just that small directory (a few KB to a
+  // few MB depending on how many files are in the zip, e.g. workout
+  // route files), find the entry we want, then read its local file
+  // header to get the exact start of its compressed data.
   // ------------------------------------------------------------
-  async function parseAppleHealthStreaming(zipEntry) {
+  async function findZipEntry(file, targetSuffix) {
+    const fileSize = file.size;
+    // End of Central Directory record is at most 64KB + 22 bytes from
+    // the end (the 64KB accounts for the maximum comment field length)
+    const eocdSearchSize = Math.min(fileSize, 65557);
+    const tailBuf = new Uint8Array(await file.slice(fileSize - eocdSearchSize, fileSize).arrayBuffer());
+
+    // Find EOCD signature 0x06054b50, scanning from the end
+    let eocdOffset = -1;
+    for (let i = tailBuf.length - 22; i >= 0; i--) {
+      if (tailBuf[i] === 0x50 && tailBuf[i+1] === 0x4b && tailBuf[i+2] === 0x05 && tailBuf[i+3] === 0x06) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    if (eocdOffset === -1) throw new Error('Not a valid zip file (no end-of-central-directory record found)');
+
+    const dv = new DataView(tailBuf.buffer, tailBuf.byteOffset, tailBuf.byteLength);
+    const cdEntryCount = dv.getUint16(eocdOffset + 10, true);
+    const cdSize = dv.getUint32(eocdOffset + 12, true);
+    const cdOffset = dv.getUint32(eocdOffset + 16, true);
+
+    // Read the full central directory in one go (this is just metadata —
+    // entry names/sizes/offsets — typically tiny even for zips with
+    // hundreds of files, NOT the actual file contents)
+    const cdBuf = new Uint8Array(await file.slice(cdOffset, cdOffset + cdSize).arrayBuffer());
+    const cdv = new DataView(cdBuf.buffer);
+
+    let pos = 0;
+    while (pos < cdBuf.length) {
+      if (cdv.getUint32(pos, true) !== 0x02014b50) break; // central dir header signature
+      const compressedSize = cdv.getUint32(pos + 20, true);
+      const nameLen = cdv.getUint16(pos + 28, true);
+      const extraLen = cdv.getUint16(pos + 30, true);
+      const commentLen = cdv.getUint16(pos + 32, true);
+      const localHeaderOffset = cdv.getUint32(pos + 42, true);
+      const nameBytes = cdBuf.slice(pos + 46, pos + 46 + nameLen);
+      const name = new TextDecoder('utf-8').decode(nameBytes);
+
+      if (name.endsWith(targetSuffix)) {
+        return { name, compressedSize, localHeaderOffset };
+      }
+      pos += 46 + nameLen + extraLen + commentLen;
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------
+  // Reads ONLY this entry's compressed bytes (in small slices via
+  // file.slice(), which the browser handles lazily from disk — the
+  // 121MB+ upload is never pulled fully into memory either), pipes
+  // them through the browser's native DecompressionStream, and
+  // scans the decompressed text as it streams out, chunk by chunk.
+  // Peak memory stays around the size of one chunk (tens of KB),
+  // regardless of whether the decompressed file is 10MB or 10GB.
+  // ------------------------------------------------------------
+  async function streamDecompressAndScan(file, entry) {
+    // First read the local file header (right before the compressed data)
+    // to get the exact compressed data start offset, since extra fields
+    // can differ in length between the central directory and local header.
+    const localHeaderBuf = new Uint8Array(await file.slice(entry.localHeaderOffset, entry.localHeaderOffset + 30).arrayBuffer());
+    const ldv = new DataView(localHeaderBuf.buffer);
+    const localNameLen = ldv.getUint16(26, true);
+    const localExtraLen = ldv.getUint16(28, true);
+    const dataStart = entry.localHeaderOffset + 30 + localNameLen + localExtraLen;
+    const dataEnd = dataStart + entry.compressedSize;
+
+    const compressedSlice = file.slice(dataStart, dataEnd);
+    const compressedStream = compressedSlice.stream();
+    const decompressedStream = compressedStream.pipeThrough(new DecompressionStream('deflate-raw'));
+
+    const reader = decompressedStream.getReader();
+    const decoder = new TextDecoder('utf-8');
     const result = { hrv: null, rhr: null, sleepHours: null };
     const sleepByDate = {};
-
-    // JSZip can hand back a Node-style stream in browsers via internal
-    // streaming; the most broadly compatible approach is to pull the
-    // uncompressed data out in chunks using JSZip's internal stream API.
-    const nodeStream = zipEntry.internalStream
-      ? zipEntry.internalStream('text')
-      : null;
-
-    // Fallback: if streaming isn't available in this JSZip build, process
-    // the text in fixed-size slices instead of one giant DOMParser pass.
-    // This still avoids building a full DOM tree.
-    const fullText = await zipEntry.async('text');
-    const CHUNK_SIZE = 2_000_000; // ~2MB slices of text at a time
     let carry = '';
 
-    for (let i = 0; i < fullText.length; i += CHUNK_SIZE) {
-      // include a small overlap so a record split across the chunk
-      // boundary isn't missed
-      const slice = carry + fullText.slice(i, i + CHUNK_SIZE);
-      scanChunkForRecords(slice, result, sleepByDate);
-      // keep the tail end in case a record tag got cut off
-      carry = slice.slice(-2000);
-      // yield back to the browser periodically so the tab doesn't appear frozen
-      if (i % (CHUNK_SIZE * 5) === 0) {
-        await new Promise(r => setTimeout(r, 0));
-      }
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = carry + decoder.decode(value, { stream: true });
+      scanChunkForRecords(text, result, sleepByDate);
+      carry = text.slice(-2000);
     }
 
     const dates = Object.keys(sleepByDate).sort();
@@ -763,7 +805,7 @@
 
   function scanChunkForRecords(text, result, sleepByDate) {
     // HRV — HKQuantityTypeIdentifierHeartRateVariabilitySDNN
-    const hrvRegex = /<Record[^>]*type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN"[^>]*value="([\d.]+)"[^>]*\/?>/g;
+    const hrvRegex = /type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN"[^>]*?value="([\d.]+)"/g;
     let m;
     while ((m = hrvRegex.exec(text)) !== null) {
       const val = parseFloat(m[1]);
@@ -771,7 +813,7 @@
     }
 
     // Resting Heart Rate
-    const rhrRegex = /<Record[^>]*type="HKQuantityTypeIdentifierRestingHeartRate"[^>]*value="([\d.]+)"[^>]*\/?>/g;
+    const rhrRegex = /type="HKQuantityTypeIdentifierRestingHeartRate"[^>]*?value="([\d.]+)"/g;
     while ((m = rhrRegex.exec(text)) !== null) {
       const val = parseFloat(m[1]);
       if (!isNaN(val)) result.rhr = Math.round(val);
@@ -779,7 +821,7 @@
 
     // Sleep analysis — capture each full Record tag for sleep type, then
     // pull out value/startDate/endDate from within that tag
-    const sleepTagRegex = /<Record[^>]*type="HKCategoryTypeIdentifierSleepAnalysis"[^>]*\/?>/g;
+    const sleepTagRegex = /<Record[^>]*?type="HKCategoryTypeIdentifierSleepAnalysis"[^>]*?>/g;
     while ((m = sleepTagRegex.exec(text)) !== null) {
       const tag = m[0];
       const valueMatch = /value="([^"]+)"/.exec(tag);
