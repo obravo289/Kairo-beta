@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kairo Beta — Founder Testing</title>
+<meta name="description" content="Kairo beta testing build for founders. No payment required." />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #080C1A; --bg-deep: #050810; --surface: #0D1228; --card: #111830;
+    --card-hover: #161F3A; --border: #1E2D55; --border-glow: #2A4080;
+    --accent: #4A9EFF; --accent-bright: #6AB8FF; --accent-dim: #4A9EFF18;
+    --cyan: #00D4FF; --cyan-dim: #00D4FF15; --warn: #FF6B6B; --warn-dim: #FF6B6B18;
+    --good: #00E5A0; --good-dim: #00E5A015; --text: #E8F0FF; --muted: #4A5880; --dim: #7A90C0;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+    background: radial-gradient(ellipse at 50% 0%, #0D1A3A 0%, var(--bg) 60%);
+    color: var(--text); min-height: 100vh; overflow-x: hidden;
+  }
+  .hidden { display: none !important; }
+  .stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .star { position: absolute; border-radius: 50%; background: #B8D4FF; }
+
+  /* Landing / gate */
+  .landing { max-width: 480px; margin: 0 auto; padding: 0 24px 60px; position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 24px 0; }
+  .logo-row { display: flex; align-items: center; gap: 10px; }
+  .logo-text { font-size: 18px; font-weight: 900; letter-spacing: 2px; }
+  .hero { text-align: center; padding: 36px 0 20px; }
+  .hero h1 { font-size: 30px; font-weight: 900; line-height: 1.2; margin-bottom: 14px; }
+  .hero p { font-size: 14.5px; color: var(--dim); line-height: 1.6; max-width: 340px; margin: 0 auto 28px; }
+  .beta-tag {
+    display: inline-block; background: var(--good-dim); color: var(--good); border: 1px solid rgba(0,229,160,0.3);
+    font-size: 11px; font-weight: 800; letter-spacing: 1.5px; padding: 6px 14px; border-radius: 20px; margin-bottom: 18px;
+  }
+  .cta-btn {
+    display: block; width: 100%; padding: 16px; border-radius: 16px;
+    background: linear-gradient(135deg, var(--accent), var(--cyan)); color: #060C1A;
+    font-weight: 800; font-size: 16px; text-align: center; border: none; cursor: pointer;
+    box-shadow: 0 8px 24px rgba(74,158,255,0.35); text-decoration: none;
+  }
+  .cta-sub { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .feature-grid { display: flex; flex-direction: column; gap: 12px; margin: 32px 0; }
+  .feature-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; display: flex; gap: 14px; align-items: flex-start; }
+  .feature-icon { font-size: 22px; flex-shrink: 0; }
+  .feature-title { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+  .feature-desc { font-size: 12.5px; color: var(--dim); line-height: 1.5; }
+  .footer-links { text-align: center; margin-top: 30px; font-size: 12px; color: var(--muted); }
+  .footer-links a { color: var(--muted); text-decoration: underline; margin: 0 8px; }
+
+  /* Beta code modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .modal-box { width: 100%; max-width: 400px; background: linear-gradient(180deg, #111830, #0D1228); border: 1px solid #2A4080; border-radius: 20px; padding: 26px 22px; }
+  .modal-title { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+  .modal-sub { font-size: 12.5px; color: var(--dim); margin-bottom: 18px; line-height: 1.5; }
+  .modal-box input[type="text"] {
+    width: 100%; padding: 14px 16px; border-radius: 12px; background: var(--card);
+    border: 1px solid var(--border-glow); color: var(--text); font-size: 15px; outline: none;
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; text-align: center; font-weight: 700;
+  }
+  .modal-box input[type="text"]:focus { border-color: var(--accent); }
+  .modal-error { font-size: 12px; color: var(--warn); margin-bottom: 12px; min-height: 14px; }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; display: block; margin: 14px auto 0; }
+
+  /* Onboarding (wearable choice at first entry) */
+  .onboard-screen { max-width: 420px; margin: 0 auto; padding: 60px 24px; position: relative; z-index: 1; min-height: 100vh; }
+  .onboard-screen h2 { text-align: center; font-size: 22px; font-weight: 800; margin-bottom: 10px; }
+  .onboard-screen .sub { text-align: center; font-size: 13px; color: var(--dim); line-height: 1.6; margin-bottom: 30px; }
+  .choice-btn { width: 100%; padding: 16px; border-radius: 16px; font-size: 15px; font-weight: 700; cursor: pointer; margin-bottom: 12px; text-align: left; display: flex; align-items: center; gap: 12px; }
+  .choice-btn.primary { background: linear-gradient(135deg, var(--accent), var(--cyan)); color: #060C1A; border: none; }
+  .choice-btn.secondary { background: var(--card); border: 1px solid var(--border-glow); color: var(--text); }
+
+  /* Manual check-in modal */
+  .slider-row { margin-bottom: 18px; }
+  .slider-row label { font-size: 12px; color: var(--dim); margin-bottom: 8px; font-weight: 600; display: block; }
+  .slider-row input[type="range"] { width: 100%; }
+  .slider-val { text-align: center; font-size: 13px; font-weight: 700; margin-top: 4px; }
+  .feel-row { display: flex; gap: 8px; }
+  .feel-btn { flex: 1; padding: 10px 6px; border-radius: 20px; background: var(--accent-dim); border: 1px solid rgba(74,158,255,0.34); color: var(--accent-bright); font-size: 12px; cursor: pointer; font-weight: 600; }
+  .feel-btn.selected { background: linear-gradient(135deg, var(--accent), var(--cyan)); color: #060C1A; border: none; }
+
+  /* App shell */
+  .app-screen { max-width: 480px; margin: 0 auto; position: relative; z-index: 1; padding-bottom: 100px; }
+  .top-bar { padding: 20px 20px 0; display: flex; justify-content: space-between; align-items: center; }
+  .nudge { margin: 16px 20px 0; background: linear-gradient(135deg, var(--accent-dim), var(--cyan-dim)); border: 1px solid rgba(74,158,255,0.27); border-radius: 18px; padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start; }
+  .tabs { display: flex; margin: 18px 20px 0; background: var(--surface); border-radius: 14px; padding: 4px; border: 1px solid var(--border); }
+  .tab-btn { flex: 1; padding: 9px 0; border-radius: 11px; border: none; cursor: pointer; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; text-transform: capitalize; }
+  .tab-btn.active { background: linear-gradient(135deg, var(--card-hover), var(--card)); color: var(--accent-bright); font-weight: 800; }
+  .tab-content { padding: 18px 20px; }
+  .hero-card { background: linear-gradient(145deg, var(--card), var(--surface)); border: 1px solid var(--border-glow); border-radius: 20px; padding: 20px; margin-bottom: 16px; }
+  .ring-row { display: flex; align-items: center; gap: 20px; }
+  .metric-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .metric-pill { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 13px 15px; flex: 1; }
+  .metric-label { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 5px; }
+  .metric-value { font-size: 21px; font-weight: 800; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 16px; }
+  .card-label { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; margin-bottom: 10px; }
+  .schedule-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .schedule-row:last-child { border-bottom: none; }
+  .do-avoid { display: flex; gap: 10px; }
+  .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: linear-gradient(180deg, rgba(13,18,40,0.93), rgba(5,8,16,1)); border-top: 1px solid var(--border-glow); backdrop-filter: blur(12px); padding: 12px 20px 24px; display: flex; justify-content: space-around; z-index: 10; }
+  .nav-item { background: none; border: none; color: var(--muted); font-size: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+  .nav-item.active { color: var(--accent-bright); font-weight: 800; }
+  .fab { position: fixed; bottom: 92px; right: calc(50% - 224px); width: 54px; height: 54px; border-radius: 50%; background: linear-gradient(135deg, #0D1A3A, #1A2A5A); border: 1.5px solid var(--accent); cursor: pointer; box-shadow: 0 4px 24px rgba(74,158,255,0.4); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .chat-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
+  .chat-panel { width: 100%; max-width: 480px; border-radius: 24px 24px 0 0; background: linear-gradient(180deg, var(--surface), var(--bg-deep)); border: 1px solid var(--border-glow); border-bottom: none; max-height: 82vh; display: flex; flex-direction: column; }
+  .chat-header { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; min-height: 200px; }
+  .msg { max-width: 84%; padding: 11px 15px; font-size: 13px; line-height: 1.55; }
+  .msg.user { align-self: flex-end; border-radius: 18px 18px 4px 18px; background: linear-gradient(135deg, var(--accent), var(--cyan)); color: #060C1A; font-weight: 700; }
+  .msg.assistant { align-self: flex-start; border-radius: 18px 18px 18px 4px; background: var(--card); border: 1px solid var(--border); }
+  .quick-prompts { padding: 0 20px 10px; display: flex; gap: 8px; overflow-x: auto; }
+  .qp-btn { white-space: nowrap; padding: 7px 13px; border-radius: 20px; background: var(--accent-dim); border: 1px solid rgba(74,158,255,0.34); color: var(--accent-bright); font-size: 12px; cursor: pointer; font-weight: 600; }
+  .chat-input-row { padding: 8px 16px 24px; display: flex; gap: 10px; }
+  .chat-input-row input { flex: 1; background: var(--card); border: 1px solid var(--border-glow); border-radius: 14px; padding: 12px 16px; color: var(--text); font-size: 14px; outline: none; }
+  .send-btn { background: linear-gradient(135deg, var(--accent), var(--cyan)); border: none; border-radius: 14px; width: 46px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .close-x { background: var(--card); border: 1px solid var(--border); color: var(--dim); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 16px; }
+
+  /* Settings tab */
+  .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-label { font-size: 13px; font-weight: 600; }
+  .settings-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .toggle-switch { width: 50px; height: 28px; border-radius: 20px; background: var(--border); position: relative; cursor: pointer; flex-shrink: 0; border: none; }
+  .toggle-switch.on { background: linear-gradient(135deg, var(--accent), var(--cyan)); }
+  .toggle-knob { width: 22px; height: 22px; border-radius: 50%; background: white; position: absolute; top: 3px; left: 3px; transition: left 0.2s ease; }
+  .toggle-switch.on .toggle-knob { left: 25px; }
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+
+<!-- ===================== LANDING / BETA GATE ===================== -->
+<div class="landing" id="landingScreen">
+  <div class="nav">
+    <div class="logo-row">
+      <svg width="28" height="28" viewBox="0 0 32 32"><defs><radialGradient id="og1" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/><stop offset="40%" stop-color="#4A9EFF" stop-opacity="0.6"/><stop offset="100%" stop-color="#00D4FF" stop-opacity="0"/></radialGradient></defs><circle cx="16" cy="16" r="13" fill="none" stroke="#4A9EFF" stroke-width="1.5" opacity="0.9"/><circle cx="16" cy="16" r="10" fill="none" stroke="#00D4FF" stroke-width="0.5" opacity="0.5"/><circle cx="16" cy="16" r="4" fill="url(#og1)"/></svg>
+      <span class="logo-text">KAIRO</span>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="beta-tag">🧪 FOUNDER BETA BUILD</div>
+    <svg width="80" height="80" viewBox="0 0 32 32" style="margin: 0 auto 20px; display:block;"><defs><radialGradient id="og2" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/><stop offset="40%" stop-color="#4A9EFF" stop-opacity="0.6"/><stop offset="100%" stop-color="#00D4FF" stop-opacity="0"/></radialGradient><filter id="glow2"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><circle cx="16" cy="16" r="13" fill="none" stroke="#4A9EFF" stroke-width="1.5" opacity="0.9" filter="url(#glow2)"/><circle cx="16" cy="16" r="10" fill="none" stroke="#00D4FF" stroke-width="0.5" opacity="0.5"/><circle cx="16" cy="16" r="4" fill="url(#og2)"/></svg>
+    <h1>Own your energy.</h1>
+    <p>This is a private testing build of Kairo for founders. No payment, no card, no commitment — just your honest feedback.</p>
+    <button class="cta-btn" onclick="openBetaModal()">Enter Beta Code</button>
+    <div class="cta-sub">This build is not for public release</div>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🌙</div>
+      <div><div class="feature-title">Sleep Debt Tracking</div><div class="feature-desc">See exactly how much rest you owe your body, and get a plan to repay it.</div></div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💙</div>
+      <div><div class="feature-title">Recovery Score</div><div class="feature-desc">HRV and resting heart rate combine into one daily number — train or rest accordingly.</div></div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🤖</div>
+      <div><div class="feature-title">AI Coach, On Demand</div><div class="feature-desc">Ask "why am I tired" and get a real answer using your real data.</div></div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📝</div>
+      <div><div class="feature-title">No Wearable? No Problem</div><div class="feature-desc">Switch to manual daily check-ins anytime from Settings — full app still works.</div></div>
+    </div>
+  </div>
+
+  <div class="footer-links">
+    <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms</a>
+  </div>
+</div>
+
+<!-- ===================== BETA CODE MODAL ===================== -->
+<div class="modal-overlay hidden" id="betaModal">
+  <div class="modal-box">
+    <div class="modal-title">Enter Your Beta Code</div>
+    <div class="modal-sub">Each founder tester has a unique code. Check the message you received, or ask the team if you don't have one yet.</div>
+    <input type="text" id="betaCodeInput" placeholder="CODE" maxlength="20" onkeydown="if(event.key==='Enter') submitBetaCode()" />
+    <div class="modal-error" id="betaError"></div>
+    <button class="cta-btn" onclick="submitBetaCode()">Continue</button>
+    <button class="modal-close" onclick="closeBetaModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- ===================== WEARABLE ONBOARDING (first entry only) ===================== -->
+<div class="onboard-screen hidden" id="wearableScreen">
+  <div style="text-align:center; margin-bottom: 8px;">
+    <svg width="60" height="60" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#4A9EFF" stroke-width="1.5" opacity="0.9"/><circle cx="16" cy="16" r="10" fill="none" stroke="#00D4FF" stroke-width="0.5" opacity="0.5"/><circle cx="16" cy="16" r="4" fill="#4A9EFF"/></svg>
+  </div>
+  <h2>Do you use a wearable?</h2>
+  <div class="sub">Kairo works either way. With a device we use real HRV and sleep data. Without one, you'll do a quick daily check-in instead. You can switch this anytime in Settings.</div>
+  <button class="choice-btn primary" onclick="selectWearableMode(true)"><span>⌚</span> Yes — Apple Watch, Whoop, Oura, etc.</button>
+  <button class="choice-btn secondary" onclick="selectWearableMode(false)"><span>📝</span> No — I'll log manually</button>
+</div>
+
+<!-- ===================== MANUAL CHECK-IN MODAL ===================== -->
+<div class="modal-overlay hidden" id="manualCheckinModal">
+  <div class="modal-box">
+    <div class="modal-title">Quick Daily Check-In</div>
+    <div class="modal-sub">No wearable needed — just a few taps.</div>
+
+    <div class="slider-row">
+      <label>How many hours did you sleep?</label>
+      <input type="range" id="manualSleepHours" min="3" max="10" step="0.5" value="6.4" oninput="document.getElementById('sleepHoursLabel').textContent = this.value + ' hrs'" />
+      <div id="sleepHoursLabel" class="slider-val" style="color:var(--accent-bright);">6.4 hrs</div>
+    </div>
+
+    <div class="slider-row">
+      <label>How rested do you feel?</label>
+      <div class="feel-row">
+        <button class="feel-btn" onclick="selectFeeling(this,'Drained')">😴 Drained</button>
+        <button class="feel-btn" onclick="selectFeeling(this,'Okay')">😐 Okay</button>
+        <button class="feel-btn" onclick="selectFeeling(this,'Energized')">⚡ Energized</button>
+      </div>
+    </div>
+
+    <div class="slider-row">
+      <label>Stress level today?</label>
+      <input type="range" id="manualStress" min="0" max="100" step="5" value="42" oninput="document.getElementById('stressLabel').textContent = this.value" />
+      <div id="stressLabel" class="slider-val" style="color:var(--warn);">42</div>
+    </div>
+
+    <button class="cta-btn" onclick="submitManualCheckin()">Save & See My Plan</button>
+  </div>
+</div>
+
+<!-- ===================== APP DASHBOARD ===================== -->
+<div class="app-screen hidden" id="appScreen">
+  <div class="top-bar">
+    <div class="logo-row">
+      <svg width="34" height="34" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#4A9EFF" stroke-width="1.5" opacity="0.9"/><circle cx="16" cy="16" r="10" fill="none" stroke="#00D4FF" stroke-width="0.5" opacity="0.5"/><circle cx="16" cy="16" r="4" fill="#4A9EFF"/></svg>
+      <div><div style="font-size:18px;font-weight:900;letter-spacing:2px;">KAIRO</div><div style="font-size:10px;color:var(--dim);letter-spacing:1px;">Own your energy</div></div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:11px;color:var(--good);letter-spacing:1px;font-weight:800;">🧪 BETA TESTER</div>
+      <div id="testerNameTag" style="font-size:13px;font-weight:700;color:var(--accent-bright);">Hey there 👋</div>
+    </div>
+  </div>
+
+  <div class="nudge" id="nudgeBox">
+    <div style="width:9px;height:9px;border-radius:50%;background:var(--accent-bright);margin-top:3px;flex-shrink:0;box-shadow:0 0 10px var(--accent);"></div>
+    <div style="flex:1;">
+      <div style="font-size:10px;font-weight:800;color:var(--accent-bright);letter-spacing:1.5px;margin-bottom:4px;">KAIRO AI · LIVE ALERT</div>
+      <div id="nudgeText" style="font-size:13px;line-height:1.55;">You lost 2h of sleep over 2 nights — your recovery is dropping. Take a 20-min nap at 1:30 PM and aim for bed by 10:30 PM tonight.</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('today', this)">Today</button>
+    <button class="tab-btn" onclick="switchTab('trends', this)">Trends</button>
+    <button class="tab-btn" onclick="switchTab('plan', this)">Plan</button>
+    <button class="tab-btn" onclick="switchTab('settings', this)">Settings</button>
+  </div>
+
+  <div class="tab-content">
+    <!-- TODAY TAB -->
+    <div id="tab-today">
+      <div class="hero-card">
+        <div class="ring-row">
+          <svg width="110" height="110" style="transform:rotate(-90deg);filter:drop-shadow(0 0 6px #4A9EFF88);">
+            <circle cx="55" cy="55" r="50" fill="none" stroke="#1E2D55" stroke-width="10"/>
+            <circle id="recoveryRingCircle" cx="55" cy="55" r="50" fill="none" stroke="#4A9EFF" stroke-width="10" stroke-dasharray="213 314" stroke-linecap="round"/>
+            <text id="recoveryRingText" x="55" y="56" text-anchor="middle" fill="#E8F0FF" font-size="22" font-weight="800" style="transform:rotate(90deg);transform-origin:55px 55px;">68</text>
+          </svg>
+          <div style="flex:1;">
+            <div id="debtLabel" style="font-size:11px;color:var(--muted);letter-spacing:1.5px;margin-bottom:6px;">SLEEP DEBT</div>
+            <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:6px;">
+              <span id="debtValue" style="font-size:32px;font-weight:900;color:var(--warn);text-shadow:0 0 16px #FF6B6B66;">2.1</span>
+              <span id="debtUnit" style="font-size:14px;color:var(--dim);font-weight:600;">hours</span>
+            </div>
+            <div id="debtNote" style="font-size:12px;color:var(--dim);line-height:1.5;">You need more rest after short sleep last night.</div>
+            <div style="margin-top:10px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;"><div id="debtBar" style="width:26%;height:100%;background:linear-gradient(90deg,#FF6B6B,#FF6B6B88);border-radius:3px;"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-row" id="hrvRhrRow">
+        <div class="metric-pill"><div class="metric-label">💙 HRV</div><div class="metric-value" style="color:var(--accent);">54 <span style="font-size:10px;color:var(--muted);">ms</span></div></div>
+        <div class="metric-pill"><div class="metric-label">❤️ Resting HR</div><div class="metric-value" style="color:var(--cyan);">54 <span style="font-size:10px;color:var(--muted);">bpm</span></div></div>
+      </div>
+      <div class="metric-row" style="margin-bottom:16px;">
+        <div class="metric-pill"><div class="metric-label" id="sleepMetricLabel">🌙 Sleep</div><div class="metric-value" id="sleepMetricValue" style="color:var(--accent-bright);">6.4 <span style="font-size:10px;color:var(--muted);">hrs</span></div></div>
+        <div class="metric-pill"><div class="metric-label">⚡ Stress</div><div class="metric-value" id="stressMetricValue" style="color:var(--warn);">42 <span style="font-size:10px;color:var(--muted);">/100</span></div></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div><div style="font-size:13px;font-weight:800;">Body Energy</div><div style="font-size:10px;color:var(--muted);letter-spacing:1px;">RECOVERY · SLEEP · STRAIN · STRESS</div></div>
+          <div id="bodyEnergyValue" style="font-size:24px;font-weight:900;color:var(--accent);text-shadow:0 0 14px #4A9EFF66;">61</div>
+        </div>
+        <div style="height:7px;background:var(--border);border-radius:4px;overflow:hidden;"><div id="bodyEnergyBar" style="width:61%;height:100%;border-radius:4px;background:linear-gradient(90deg,#4A9EFF,#00D4FF);box-shadow:0 0 8px #4A9EFF66;"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label" style="color:var(--accent);">TODAY'S SCHEDULE</div>
+        <div class="schedule-row"><span style="font-size:18px;">🏃</span><div style="flex:1;font-size:12px;color:var(--dim);">Train</div><div style="font-size:13px;font-weight:700;">Light Training</div></div>
+        <div class="schedule-row"><span style="font-size:18px;">🌙</span><div style="flex:1;font-size:12px;color:var(--dim);">Nap</div><div style="font-size:13px;font-weight:700;">20 min at 1:30 PM</div></div>
+        <div class="schedule-row"><span style="font-size:18px;">😴</span><div style="flex:1;font-size:12px;color:var(--dim);">Sleep</div><div style="font-size:13px;font-weight:700;">8h 40m</div></div>
+        <div class="schedule-row" style="border-bottom:none;"><span style="font-size:18px;">🛏</span><div style="flex:1;font-size:12px;color:var(--dim);">Bedtime</div><div style="font-size:13px;font-weight:700;">10:30 PM</div></div>
+      </div>
+
+      <div class="do-avoid">
+        <div style="flex:1;background:var(--good-dim);border:1px solid rgba(0,229,160,0.2);border-radius:14px;padding:14px;">
+          <div style="font-size:10px;color:var(--good);font-weight:800;letter-spacing:1.5px;margin-bottom:6px;">DO THIS</div>
+          <div style="font-size:12px;line-height:1.5;">Zone 2 cardio or light mobility — 30–40 min max</div>
+        </div>
+        <div style="flex:1;background:var(--warn-dim);border:1px solid rgba(255,107,107,0.2);border-radius:14px;padding:14px;">
+          <div style="font-size:10px;color:var(--warn);font-weight:800;letter-spacing:1.5px;margin-bottom:6px;">AVOID</div>
+          <div style="font-size:12px;line-height:1.5;">HIIT, heavy lifting, late-night screens</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRENDS TAB -->
+    <div id="tab-trends" class="hidden">
+      <div class="card">
+        <div style="font-size:13px;font-weight:800;margin-bottom:2px;">Sleep Debt — Past 7 Days</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:16px;">You're recovering — debt reduced by 1.2h this week</div>
+        <div style="display:flex;gap:5px;align-items:flex-end;height:64px;">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:38px;background:linear-gradient(180deg,#1E2D55,#1E2D5588);border-radius:4px 4px 2px 2px;"></div><span style="font-size:9px;color:var(--muted);">M</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:49px;background:linear-gradient(180deg,#1E2D55,#1E2D5588);border-radius:4px 4px 2px 2px;"></div><span style="font-size:9px;color:var(--muted);">T</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:26px;background:linear-gradient(180deg,#1E2D55,#1E2D5588);border-radius:4px 4px 2px 2px;"></div><span style="font-size:9px;color:var(--muted);">W</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:56px;background:linear-gradient(180deg,#1E2D55,#1E2D5588);border-radius:4px 4px 2px 2px;"></div><span style="font-size:9px;color:var(--muted);">T</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:44px;background:linear-gradient(180deg,#1E2D55,#1E2D5588);border-radius:4px 4px 2px 2px;"></div><span style="font-size:9px;color:var(--muted);">F</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:33px;background:linear-gradient(180deg,#1E2D55,#1E2D5588);border-radius:4px 4px 2px 2px;"></div><span style="font-size:9px;color:var(--muted);">S</span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:40px;background:linear-gradient(180deg,#6AB8FF,#4A9EFF88);border-radius:4px 4px 2px 2px;box-shadow:0 0 10px #4A9EFF66;"></div><span style="font-size:9px;color:var(--accent-bright);font-weight:700;">S</span></div>
+        </div>
+        <div style="margin-top:14px;padding:10px 14px;background:var(--accent-dim);border-radius:10px;border:1px solid rgba(74,158,255,0.2);">
+          <div style="font-size:12px;color:var(--accent-bright);font-weight:700;">✨ You're recovering</div>
+          <div style="font-size:11px;color:var(--dim);">Sleep Debt Reduced by 1.2h This Week</div>
+        </div>
+      </div>
+
+      <div style="font-size:10px;font-weight:800;color:var(--dim);letter-spacing:2px;margin-bottom:12px;text-transform:uppercase;">AI-Detected Patterns</div>
+      <div style="background:var(--warn-dim);border:1px solid rgba(255,107,107,0.2);border-radius:14px;padding:13px 16px;margin-bottom:10px;display:flex;gap:12px;"><span>⚠️</span><div style="font-size:13px;line-height:1.5;">You sleep worse after midnight — bedtime after 11pm cuts your deep sleep by 31%</div></div>
+      <div style="background:var(--good-dim);border:1px solid rgba(0,229,160,0.2);border-radius:14px;padding:13px 16px;margin-bottom:10px;display:flex;gap:12px;"><span>✅</span><div style="font-size:13px;line-height:1.5;">Consistent sleep schedule boosts your recovery by 18%</div></div>
+      <div style="background:var(--warn-dim);border:1px solid rgba(255,107,107,0.2);border-radius:14px;padding:13px 16px;display:flex;gap:12px;"><span>⚠️</span><div style="font-size:13px;line-height:1.5;">3 consecutive nights under 7hrs raises your injury risk by 40%</div></div>
+    </div>
+
+    <!-- PLAN TAB -->
+    <div id="tab-plan" class="hidden">
+      <div class="card">
+        <div class="card-label" style="color:var(--accent);">AI AUTO-ADJUSTED PLAN</div>
+        <div style="font-size:15px;font-weight:800;margin-bottom:14px;">This week, built around your recovery</div>
+        <div class="schedule-row"><div style="width:32px;font-size:12px;font-weight:800;color:var(--accent-bright);">Mon</div><div style="flex:1;"><div style="font-size:13px;font-weight:600;">Zone 2 Run</div><div style="font-size:10px;color:var(--muted);">40 min</div></div></div>
+        <div class="schedule-row"><div style="width:32px;font-size:12px;font-weight:800;color:var(--muted);">Tue</div><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--dim);">Strength — Upper</div><div style="font-size:10px;color:var(--muted);">50 min</div></div></div>
+        <div class="schedule-row"><div style="width:32px;font-size:12px;font-weight:800;color:var(--muted);">Wed</div><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--dim);">Rest + Mobility</div><div style="font-size:10px;color:var(--muted);">20 min</div></div></div>
+        <div class="schedule-row"><div style="width:32px;font-size:12px;font-weight:800;color:var(--muted);">Thu</div><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--dim);">HIIT</div><div style="font-size:10px;color:var(--muted);">35 min</div></div></div>
+        <div class="schedule-row"><div style="width:32px;font-size:12px;font-weight:800;color:var(--muted);">Fri</div><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--dim);">Strength — Lower</div><div style="font-size:10px;color:var(--muted);">50 min</div></div></div>
+        <div class="schedule-row"><div style="width:32px;font-size:12px;font-weight:800;color:var(--muted);">Sat</div><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--dim);">Long Run</div><div style="font-size:10px;color:var(--muted);">70 min</div></div></div>
+        <div class="schedule-row" style="border-bottom:none;"><div style="width:32px;font-size:12px;font-weight:800;color:var(--muted);">Sun</div><div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--dim);">Full Rest</div><div style="font-size:10px;color:var(--muted);">—</div></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label" style="color:var(--cyan);">SLEEP OPTIMIZATION · TONIGHT</div>
+        <div class="schedule-row"><div style="font-size:12px;font-weight:700;color:var(--accent-bright);width:58px;flex-shrink:0;">6:30pm</div><div style="font-size:12px;color:var(--dim);line-height:1.45;">Last large meal — eating late pushes your bedtime HRV down 15%</div></div>
+        <div class="schedule-row"><div style="font-size:12px;font-weight:700;color:var(--accent-bright);width:58px;flex-shrink:0;">8:00pm</div><div style="font-size:12px;color:var(--dim);line-height:1.45;">Dim lights + no screens — signals melatonin release</div></div>
+        <div class="schedule-row"><div style="font-size:12px;font-weight:700;color:var(--accent-bright);width:58px;flex-shrink:0;">9:30pm</div><div style="font-size:12px;color:var(--dim);line-height:1.45;">Wind down routine — reading, stretching, no work</div></div>
+        <div class="schedule-row" style="border-bottom:none;"><div style="font-size:12px;font-weight:700;color:var(--accent-bright);width:58px;flex-shrink:0;">10:30pm</div><div style="font-size:12px;color:var(--dim);line-height:1.45;">Target bedtime — aligns with your circadian peak</div></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS TAB -->
+    <div id="tab-settings" class="hidden">
+      <div class="card">
+        <div class="card-label" style="color:var(--accent);">DATA SOURCE</div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">I use a wearable</div>
+            <div class="settings-desc" id="wearableToggleDesc">Apple Watch, Whoop, Oura, or similar device</div>
+          </div>
+          <button class="toggle-switch" id="wearableToggle" onclick="toggleWearableMode()"><div class="toggle-knob"></div></button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label" style="color:var(--accent);">BETA TESTER INFO</div>
+        <div style="font-size:12.5px; color: var(--dim); line-height:1.6;">
+          You're using a private testing build of Kairo. This is not the public app — pricing and final features aren't set yet. Your feedback directly shapes what we build next.
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label" style="color:var(--warn);">SESSION</div>
+        <button class="cta-btn" style="background: var(--card); border: 1px solid var(--border-glow); color: var(--text);" onclick="exitToLanding()">Log Out / Switch Tester Code</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-item active" onclick="switchTab('today', document.querySelectorAll('.tab-btn')[0])"><span style="font-size:20px;">◎</span>Dashboard</button>
+    <button class="nav-item" onclick="switchTab('trends', document.querySelectorAll('.tab-btn')[1])"><span style="font-size:20px;">📈</span>Sleep Debt</button>
+    <button class="nav-item" onclick="switchTab('plan', document.querySelectorAll('.tab-btn')[2])"><span style="font-size:20px;">💡</span>Insights</button>
+    <button class="nav-item" onclick="switchTab('settings', document.querySelectorAll('.tab-btn')[3])"><span style="font-size:20px;">⚙️</span>Settings</button>
+  </div>
+
+  <button class="fab" onclick="openChat()">
+    <svg width="30" height="30" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#4A9EFF" stroke-width="1.5"/><circle cx="16" cy="16" r="10" fill="none" stroke="#00D4FF" stroke-width="0.5" opacity="0.5"/><circle cx="16" cy="16" r="4" fill="#4A9EFF"/></svg>
+  </button>
+</div>
+
+<!-- ===================== AI CHAT OVERLAY ===================== -->
+<div class="chat-overlay hidden" id="chatOverlay" onclick="if(event.target===this) closeChat()">
+  <div class="chat-panel">
+    <div class="chat-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <svg width="28" height="28" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#4A9EFF" stroke-width="1.5"/><circle cx="16" cy="16" r="10" fill="none" stroke="#00D4FF" stroke-width="0.5" opacity="0.5"/><circle cx="16" cy="16" r="4" fill="#4A9EFF"/></svg>
+        <div><div style="font-weight:800;font-size:15px;">Kairo AI Coach</div><div style="font-size:10px;color:var(--accent);letter-spacing:1px;">SLEEP · RECOVERY · ENERGY</div></div>
+      </div>
+      <button class="close-x" onclick="closeChat()">×</button>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="msg assistant">Hey 👋 You lost 2 hours of sleep over the last 2 nights, which is lowering your recovery today. Your score is 68 — manageable, but your body is asking for rest. What do you want to know?</div>
+    </div>
+    <div class="quick-prompts">
+      <button class="qp-btn" onclick="sendQuick('Why am I so tired?')">Why am I so tired?</button>
+      <button class="qp-btn" onclick="sendQuick('How do I fix sleep debt?')">How to fix sleep debt?</button>
+      <button class="qp-btn" onclick="sendQuick('Should I nap today?')">Should I nap today?</button>
+      <button class="qp-btn" onclick="sendQuick('Explain my HRV')">Explain my HRV</button>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="Ask about your sleep..." onkeydown="if(event.key==='Enter') sendMessage()" />
+      <button class="send-btn" onclick="sendMessage()"><svg width="18" height="18" viewBox="0 0 24 24" fill="#060C1A"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ============================================================
+  // BETA TESTER CODES — one unique code per founder.
+  // Edit names/codes here as needed.
+  // ============================================================
+  const BETA_CODES = {
+    "KAIRO-F01": "Founder 1",
+    "KAIRO-F02": "Founder 2",
+    "KAIRO-F03": "Founder 3",
+    "KAIRO-F04": "Founder 4",
+    "KAIRO-F05": "Founder 5",
+    "KAIRO-F06": "Founder 6",
+    "KAIRO-F07": "Founder 7",
+    "KAIRO-F08": "Founder 8",
+    "KAIRO-F09": "Founder 9",
+    "KAIRO-F10": "Founder 10"
+  };
+
+  // Star field
+  const starsEl = document.getElementById('stars');
+  for (let i = 0; i < 40; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const size = i % 5 === 0 ? 2 : 1;
+    s.style.width = size + 'px';
+    s.style.height = size + 'px';
+    s.style.left = ((i * 37 + 11) % 100) + '%';
+    s.style.top = ((i * 53 + 7) % 90) + '%';
+    s.style.opacity = 0.15 + (i % 4) * 0.08;
+    starsEl.appendChild(s);
+  }
+
+  function openBetaModal() { document.getElementById('betaModal').classList.remove('hidden'); document.getElementById('betaError').textContent=''; }
+  function closeBetaModal() { document.getElementById('betaModal').classList.add('hidden'); }
+
+  function submitBetaCode() {
+    const raw = document.getElementById('betaCodeInput').value.trim().toUpperCase();
+    if (BETA_CODES.hasOwnProperty(raw)) {
+      window.kairoTesterName = BETA_CODES[raw];
+      window.kairoTesterCode = raw;
+      document.getElementById('betaModal').classList.add('hidden');
+      document.getElementById('landingScreen').classList.add('hidden');
+      showWearableScreen();
+    } else {
+      document.getElementById('betaError').textContent = "That code wasn't recognized. Check it and try again.";
+    }
+  }
+
+  function showLanding() {
+    document.getElementById('landingScreen').classList.remove('hidden');
+    document.getElementById('appScreen').classList.add('hidden');
+    document.getElementById('wearableScreen').classList.add('hidden');
+  }
+  function exitToLanding() { showLanding(); }
+
+  function showWearableScreen() { document.getElementById('wearableScreen').classList.remove('hidden'); }
+
+  function selectWearableMode(hasWearable) {
+    window.kairoHasWearable = hasWearable;
+    document.getElementById('wearableScreen').classList.add('hidden');
+    if (hasWearable) {
+      enterDashboard();
+    } else {
+      document.getElementById('manualCheckinModal').classList.remove('hidden');
+    }
+  }
+
+  let selectedFeeling = 'Okay';
+  function selectFeeling(btn, label) {
+    document.querySelectorAll('.feel-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedFeeling = label;
+  }
+
+  function submitManualCheckin() {
+    const hours = parseFloat(document.getElementById('manualSleepHours').value);
+    const stress = parseInt(document.getElementById('manualStress').value);
+    window.kairoManualData = { hours, stress, feeling: selectedFeeling };
+    document.getElementById('manualCheckinModal').classList.add('hidden');
+    enterDashboard();
+  }
+
+  function enterDashboard() {
+    document.getElementById('appScreen').classList.remove('hidden');
+    const tag = document.getElementById('testerNameTag');
+    if (tag && window.kairoTesterName) tag.textContent = 'Hey, ' + window.kairoTesterName + ' 👋';
+    updateWearableToggleUI();
+    applyDataModeToUI();
+  }
+
+  function updateWearableToggleUI() {
+    const toggle = document.getElementById('wearableToggle');
+    const desc = document.getElementById('wearableToggleDesc');
+    if (window.kairoHasWearable) {
+      toggle.classList.add('on');
+      desc.textContent = 'Apple Watch, Whoop, Oura, or similar device';
+    } else {
+      toggle.classList.remove('on');
+      desc.textContent = 'Off — using manual daily check-ins instead';
+    }
+  }
+
+  function toggleWearableMode() {
+    window.kairoHasWearable = !window.kairoHasWearable;
+    updateWearableToggleUI();
+    if (!window.kairoHasWearable && !window.kairoManualData) {
+      // ask for a check-in the first time they switch to manual
+      document.getElementById('manualCheckinModal').classList.remove('hidden');
+    } else {
+      applyDataModeToUI();
+    }
+  }
+
+  // Adjust dashboard numbers/labels based on wearable vs manual mode
+  function applyDataModeToUI() {
+    const hrvRhrRow = document.getElementById('hrvRhrRow');
+    const debtLabel = document.getElementById('debtLabel');
+    const debtValue = document.getElementById('debtValue');
+    const debtUnit = document.getElementById('debtUnit');
+    const debtNote = document.getElementById('debtNote');
+    const debtBar = document.getElementById('debtBar');
+    const sleepLabel = document.getElementById('sleepMetricLabel');
+    const sleepValue = document.getElementById('sleepMetricValue');
+    const stressValue = document.getElementById('stressMetricValue');
+    const ringText = document.getElementById('recoveryRingText');
+    const ringCircle = document.getElementById('recoveryRingCircle');
+    const nudgeText = document.getElementById('nudgeText');
+
+    if (window.kairoHasWearable) {
+      hrvRhrRow.classList.remove('hidden');
+      debtLabel.textContent = 'SLEEP DEBT';
+      debtValue.textContent = '2.1';
+      debtUnit.textContent = 'hours';
+      debtNote.textContent = 'You need more rest after short sleep last night.';
+      debtBar.style.width = '26%';
+      sleepLabel.textContent = '🌙 Sleep';
+      sleepValue.innerHTML = '6.4 <span style="font-size:10px;color:var(--muted);">hrs</span>';
+      stressValue.innerHTML = '42 <span style="font-size:10px;color:var(--muted);">/100</span>';
+      ringText.textContent = '68';
+      setRing(ringCircle, 68);
+      nudgeText.textContent = 'You lost 2h of sleep over 2 nights — your recovery is dropping. Take a 20-min nap at 1:30 PM and aim for bed by 10:30 PM tonight.';
+    } else {
+      hrvRhrRow.classList.add('hidden');
+      const d = window.kairoManualData || { hours: 6.4, stress: 42, feeling: 'Okay' };
+      const feelingMap = { 'Drained': 35, 'Okay': 60, 'Energized': 82 };
+      const score = feelingMap[d.feeling] || 60;
+      const debt = Math.max(0, (8 - d.hours)).toFixed(1);
+
+      debtLabel.textContent = 'SELF-REPORTED ENERGY';
+      debtValue.textContent = debt;
+      debtUnit.textContent = 'hrs short';
+      debtNote.textContent = `You said you felt "${d.feeling.toLowerCase()}" today after ${d.hours}h of sleep.`;
+      debtBar.style.width = Math.min(100, (debt / 5) * 100) + '%';
+      sleepLabel.textContent = '🌙 Sleep (logged)';
+      sleepValue.innerHTML = d.hours + ' <span style="font-size:10px;color:var(--muted);">hrs</span>';
+      stressValue.innerHTML = d.stress + ' <span style="font-size:10px;color:var(--muted);">/100</span>';
+      ringText.textContent = score;
+      setRing(ringCircle, score);
+      nudgeText.textContent = `Based on your check-in, you're feeling "${d.feeling.toLowerCase()}" — adjust today's intensity accordingly. Log again tomorrow to keep this accurate.`;
+    }
+  }
+
+  function setRing(circleEl, value) {
+    const r = 50;
+    const circ = 2 * Math.PI * r;
+    const dash = (value / 100) * circ;
+    circleEl.setAttribute('stroke-dasharray', `${dash} ${circ}`);
+  }
+
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    ['today','trends','plan','settings'].forEach((t, i) => {
+      document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+    });
+    const navIndex = ['today','trends','plan','settings'].indexOf(name);
+    const navItems = document.querySelectorAll('.nav-item');
+    if (navItems[navIndex]) navItems[navIndex].classList.add('active');
+  }
+
+  function openChat() { document.getElementById('chatOverlay').classList.remove('hidden'); }
+  function closeChat() { document.getElementById('chatOverlay').classList.add('hidden'); }
+
+  const cannedResponses = {
+    "why am i so tired?": "Your sleep debt is sitting at 2.1 hours after two short nights in a row. That deficit directly lowers your Body Energy score — right now you're running at 61/100. The fix is tonight: hit your 10:30 PM bedtime and you'll claw back most of that debt by tomorrow.",
+    "how do i fix sleep debt?": "Sleep debt clears fastest with consistency, not one big catch-up night. Aim for your 8h 40m target tonight, take the 20-min nap at 1:30 PM today, and avoid pushing bedtime past 11 — that's where your deep sleep really drops off.",
+    "should i nap today?": "Yes — a 20-minute nap around 1:30 PM fits your dip in the post-lunch energy curve without interfering with tonight's sleep. Keep it under 25 minutes so you don't roll into deep sleep and wake up groggy.",
+    "explain my hrv": "Your HRV is 54ms, which is below your usual baseline. Lower HRV means your nervous system is still recovering from accumulated stress and short sleep — it's your body's way of saying 'go easy today.' Pair it with your RHR of 54bpm and that's why today's plan calls for light training instead of HIIT.",
+  };
+  const fallbackResponses = [
+    "Based on your current recovery score and sleep debt, I'd focus on consistency tonight — hit your target bedtime and your numbers should bounce back within a day or two.",
+    "Your stress level is a bit elevated right now. Combined with reduced sleep, that's likely why things feel harder today. A short walk or 10 minutes of breathing work can take the edge off.",
+    "Looking at your data, your energy dip is being driven mostly by sleep, not training load. Prioritize rest over pushing harder this week."
+  ];
+
+  function addMessage(text, role) {
+    const wrap = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = 'msg ' + role;
+    div.textContent = text;
+    wrap.appendChild(div);
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function respond(userText) {
+    const key = userText.trim().toLowerCase();
+    const reply = cannedResponses[key] || fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+    setTimeout(() => addMessage(reply, 'assistant'), 600);
+  }
+
+  function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    addMessage(text, 'user');
+    input.value = '';
+    respond(text);
+  }
+
+  function sendQuick(text) {
+    addMessage(text, 'user');
+    respond(text);
+  }
+</script>
+
+</body>
+</html>
